@@ -3,7 +3,7 @@ A gforth application (in progress) that takes/reads/deletes/etc notes from the c
 
 This application has just been started. It is envisioned to be a series of smaller programs that are called from the command line. 
 
-The purpose is to write down and sotre a note to yourself when you are in the middle of doing somnething else at the command prompt.
+The purpose is to write down and store a note to yourself when you are in the middle of doing somnething else at the command prompt.
 
 For example, you are debugging and compiling a program and are at a command prompt. You get a call from your dentist remindiing you 
 that you have an appointment at 1:00 PM Thursday. You quickly dash a note to yourself by entering (as an example):

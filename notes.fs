@@ -75,14 +75,14 @@ nts 0 + constant ntshdr
 : store-ntsfirst ( n -- )
 	ntshdr ntsfirst + c! ;
 
-: get-first-nt-idx ( -- n )
+: get-ntsfirst ( -- n )
 	ntshdr ntsfirst + c@ ;
 
-: store-next-nt-idx ( n -- )
+: store-ntsnext ( n -- )
 	ntshdr ntsnext + c! ;
 
 : store-next-avail-nt-idx ( -- )
-	dequeue-elem store-next-nt-idx ;
+	dequeue-elem store-ntsnext ;
 
 : store-lastwritten ( n -- )
 	ntshdr ntslastwritten + c! ;
@@ -97,24 +97,18 @@ nts 0 + constant ntshdr
 	store-next-avail-nt-idx \ read from queue, first = 0
 	nullptr store-lastwritten ; \ initialize last written to dummy data
 
-: get-next-nt-idx ( -- n )
+: get-ntsnext ( -- n )
 	ntshdr ntsnext + c@ ;
 
 : get-nt-addr-from-idx  ( idx -- addr-of-note-within-notes )
 	ntsz *
 	ntshdrsz + 
 	nts +
-\	cr ." addr of note within notes: "
-\	cr hex .s cr decimal
-\	." Press a key to continue: "
-\	key drop
 ;
 
 
 : get-next-nt-offset ( -- addr )
-	get-next-nt-idx  ( n )
-\	cr ." idx of next note: "
-\	hex cr .s cr decimal
+	get-ntsnext  ( n )
 	dup              ( n n )
 	get-nt-addr-from-idx ( n addr )
 	dup               ( n addr addr )
@@ -123,23 +117,17 @@ nts 0 + constant ntshdr
 	ntidx + c!   ( addr )
 ;
 
-
-: get-1st-nt-idx ntshdr ntsfirst + c@ ;
-
 : this-is-last-note ( addr -- )
 	nullptr swap ntnext + c! ;
 
 : get-ntstotal ( -- n )
 	ntshdr ntstotal + c@ ;
 
-: update-next-nt ( -- next-avail-nt )
-	store-next-avail-nt-idx ;
-
+\ : update-next-nt ( -- next-avail-nt )
+\	store-next-avail-nt-idx ;
 	
 : get-nt-content
 	cr ." Enter note: " ntsz INPUT$ ;
-
-\ : move-content-to-nts-body 
 
 : store-content-to-nts-body ( addr-1 len -- addr-of-nt-within-nts )
 	get-next-nt-offset ( addr-1 len addr-of-nt-within-nts )
@@ -163,16 +151,16 @@ nts 0 + constant ntshdr
 ;
 
 : maybe-update-ntsfirst-field ( -- )
-	get-first-nt-idx ( first-idx )
+	get-ntsfirst ( first-idx )
 	nullptr = if 
-		get-next-nt-idx ( n )
+		get-ntsnext ( n )
 		store-ntsfirst ( stack empty )
 	then ;
 
 : update-next-nt-field ( -- ) 
 	get-lastwritten ( n )
 	get-nt-addr-from-idx ( nt-addr )
-	get-next-nt-idx ( nt-addr next-nt-idx )
+	get-ntsnext ( nt-addr next-nt-idx )
 	swap            ( next-nt-idx nt-addr )
 	ntnext + c!     ( stack empty )
 ;
@@ -205,22 +193,28 @@ nts 0 + constant ntshdr
 \ 3. get note's "next note" index
 \ 4. last note? yes? end. no? go to step 2.
 
-\ : read-nts get-nt-addr-from-idx
-\	ntshdr ntsfirst + c@ 
-\	dup >r nthdrsz + cstring>sstring cr type
-\	r> ntnext + c@ get-nt-addr-from-idx nthdrsz + cstring>sstring cr type cr ;
+: read-nt ( n -- )
+	get-nt-addr-from-idx ( nt-addr )
+	dup ntidx + c@       ( nt-addr idx-field-of-nt )
+	nullptr =            ( nt-addr f )
+	if                   ( nt-addr ) 
+		cr ." That note was deleted." cr
+		drop exit
+	else  \ otherwise, display the note
+		nthdrsz + cstring>sstring cr type cr
+	then ; 
+	
 
-: display-nt-by-idx ( n -- )
-	get-nt-addr-from-idx nthdrsz + cstring>sstring cr type cr ;
-
-: get-next-nt-idx-in-nt ( idx -- next )
-	get-nt-addr-from-idx ntnext + c@ ; 
+: get-ntnext ( idx -- ntnext-of-idx )
+	get-nt-addr-from-idx  ( nt-addr-of-idx )
+	ntnext + c@           ( ntnext-of-nt )
+;
 
 : last-note? ( idx -- f )
 	nullptr = ;
 
 : read-nts ( -- ) \ displays stored notes from first to last.
-	get-first-nt-idx ( n )
+	get-ntsfirst ( n )
 	dup ( n n )
 	last-note? ( n f )
 	if ( n )
@@ -230,16 +224,15 @@ nts 0 + constant ntshdr
 	else
 		begin
 			dup ( n n )
-			dup cr ." Note: " . 
-			display-nt-by-idx ( n )
-			get-next-nt-idx-in-nt ( idx-of-next-nt )
+			dup cr ." Note: " . ( n n )
+			read-nt ( n )
+			get-ntnext ( idx-of-next-nt )
 			dup ( idx-of-next-note idx-of-next-nt )
 			last-note? ( idx-of-next-note f )
 		until
 		drop
 	then ;
-	
-	
+
 \ delete note: delete by number, text, or regexp, with prompt 1. find
 \ idx of note to delete 2. compare with first note is it first?
 \ 3. yes: change first note field in nts to first note's "next" field
@@ -252,15 +245,7 @@ nts 0 + constant ntshdr
 \ doubly-linked list.
 
 : first-nt? ( idx -- f )
-	get-first-nt-idx = ;
-
-: get-ntnext ( idx -- ntnext-of-idx )
-	get-nt-addr-from-idx  ( nt-addr-of-idx )
-	ntnext + c@           ( ntnext-of-nt )
-;
-
-\ : store-idx-as-ntsfirst ( idx -- )
-\   ntshdr ntsfirst + c! ;
+	get-ntsfirst = ;
 
 : erase-nt-by-idx ( idx -- )
 	get-nt-addr-from-idx ( ntaddr )
@@ -269,7 +254,7 @@ nts 0 + constant ntshdr
 
 : find-idx-of-nt-that-points-to-n ( n -- idx-of-nt-that-points-to-n )
 	dup >r ( n ) ( R: n )
-	get-first-nt-idx ( n nt[0] )
+	get-ntsfirst ( n nt[0] )
 	begin            ( n nt[0] )
 		nip        ( nt[i] )   \ i := i + 1, starting from 0
 		dup        ( nt[i] nt[i] )
@@ -281,7 +266,7 @@ nts 0 + constant ntshdr
 	drop    ( idx-of-nt-that-points-to-n )
 	r> drop ;
 
-\ NEEDS WORK
+
 : point-ntnext-ptr-to-next-of-n ( idx-of-nt-that-points-to-n n -- )
 	\ What is supposed to happen:
 	\ n's "next" pointer is retrieved
@@ -290,18 +275,22 @@ nts 0 + constant ntshdr
 	\ meaning that the next ptr of the nt that points to n
 	\ now points to the nt that was pointed to by n's "next" ptr
 	get-ntnext ( nt-that-pts-to-n nt-next-of-n )
-\	get-nt-addr-from-idx ( n addr-of-next )
-\	ntnext +                ( n addr-of-next-next )
-\	c@         ( n value-of-next-next )
 	swap       ( value-of-next-of-n idx-of-nt-that-points-to-n )
 	get-nt-addr-from-idx ( value-of-next-of-n addr-of-nt-that-points-to-n )
 	ntnext + ( value-of-next-of-n addr-of-next-ptr-of-nt-that-points-to-n )
 	c!    ( stack empty )
-;	
+;
 
+: store-nullptr-as-idx ( n -- )
+	get-nt-addr-from-idx ( nt-addr )
+	ntidx + ( nt-idx-addr )
+	nullptr swap ( nullptr nt-idx-addr )
+	c! ;
 
 : finish-up-del ( n -- )
 	dup erase-nt-by-idx ( n ) \ erase note to be deleted
+	dup store-nullptr-as-idx ( n ) \ store "null ptr" so we know
+	\ there's no note there, rather than index 0
 	enqueue-elem        ( stack empty ) \ enqueue n's index back onto the queue
 	-1 update-ntstotal	\ decrement the total number of notes
 ;	
@@ -329,7 +318,7 @@ nts 0 + constant ntshdr
 		\ point that node's "next" pointer to the value of
 		\ n's "next" pointer
 		over ( n ptr-to-n n )
-		point-ntnext-ptr-to-next-of-n ( n )
+		point-ntnext-ptr-to-next-of-n ( n ) \ could be "nullptr"
 		finish-up-del \ erase the note and update total # of notes
 	then
 ;
@@ -337,6 +326,11 @@ nts 0 + constant ntshdr
 : write-notes-to-file ( -- )
 	notes-filename cstring>sstring open-output
 	nts ntssz fd-out write-file
+	0= if
+		cr ." Notes file written successfully."
+	else
+		cr ." Error writing notes file."
+	then
 	close-output ;
 
 : read-notes-from-file ( -- )
@@ -360,6 +354,9 @@ nts 0 + constant ntshdr
 : write-q-to-file ( -- )
 	q-filename cstring>sstring open-output
 	q qsize fd-out write-file
+	0= if
+		cr ." Queue file written successfully."	else
+		cr ." Error writing queue file." then
 	close-output ;
 
 : read-q-from-file ( -- )
@@ -371,7 +368,7 @@ nts 0 + constant ntshdr
 	else
 		cr ." Error reading queue file. "
 	then
-	drop
+	drop \ drop length of file read
 	close-input ;
 
 : save-state ( -- )

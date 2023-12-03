@@ -7,6 +7,7 @@ init-included-files
 
 require q.fs
 require fileio.fs
+require numconv.fs
 
 decimal
 1 constant debugging
@@ -81,6 +82,9 @@ nts 0 + constant ntshdr
 : store-ntsnext ( n -- )
 	ntshdr ntsnext + c! ;
 
+: get-ntsnext ( -- n )
+	ntshdr ntsnext + c@ ;
+
 : store-next-avail-nt-idx ( -- )
 	dequeue-elem store-ntsnext ;
 
@@ -96,9 +100,6 @@ nts 0 + constant ntshdr
 	nullptr store-ntsfirst
 	store-next-avail-nt-idx \ read from queue, first = 0
 	nullptr store-lastwritten ; \ initialize last written to dummy data
-
-: get-ntsnext ( -- n )
-	ntshdr ntsnext + c@ ;
 
 : get-nt-addr-from-idx  ( idx -- addr-of-note-within-notes )
 	ntsz *
@@ -141,9 +142,33 @@ nts 0 + constant ntshdr
 : get-idx-of-nt-from-offset ( addr-of-current-note - idx )
 	ntidx + c@ ;
 
+
+: timestamp-nt-by-idx ( n -- )
+	get-nt-addr-from-idx
+	>r
+	time&date  ( sec min hr day month year )
+	2000 - 
+	r@ ntyear + c! ( sec min hr day mon )
+	r@ ntmonth + c! ( sec min hr day )
+	r@ ntday + c! ( sec min hr )
+	r@ nthour + c! ( sec min )
+	r> ntmin + c! ( sec )
+	drop    \ no room to store seconds
+;
+
+: display-timestamp-by-idx ( n -- )
+	get-nt-addr-from-idx dup >r
+	ntmin + c@
+	r@ nthour + c@
+	r@ ntday + c@
+	r@ ntmonth + c@
+	r> ntyear + c@
+	dispdt space disptm ;
 	
+
 : update-nt-and-nts-headers ( addr-of-current-note -- )
 	dup get-idx-of-nt-from-offset ( addr-of-curr-note idx )
+	dup timestamp-nt-by-idx      ( addr-of-curr-note idx )
 	store-lastwritten            ( addr-of-curr-note )
 	this-is-last-note            ( stack empty )
 	1 update-ntstotal            ( stack empty ) \ increment ntstotal
@@ -187,21 +212,20 @@ nts 0 + constant ntshdr
 	nts ntsz 1 * ntshdrsz + dump \ display it
 ;
 
-\ read notes:
-\ 1. get idx of first note
-\ 2. display note with index 
-\ 3. get note's "next note" index
-\ 4. last note? yes? end. no? go to step 2.
-
+\ needs to be tested again
 : read-nt ( n -- )
-	get-nt-addr-from-idx ( nt-addr )
-	dup ntidx + c@       ( nt-addr idx-field-of-nt )
-	nullptr =            ( nt-addr f )
-	if                   ( nt-addr ) 
+	dup                  ( n n )
+	get-nt-addr-from-idx ( n nt-addr )
+	dup ntidx + c@       ( n nt-addr idx-field-of-nt )
+	nullptr =            ( n nt-addr f )
+	if                   ( n nt-addr ) 
 		cr ." That note was deleted." cr
-		drop exit
+		2drop exit
 	else  \ otherwise, display the note
-		nthdrsz + cstring>sstring cr type cr
+		swap            ( nt-addr n )
+		dup cr ." Note: " . space ( nt-addr n )
+		display-timestamp-by-idx cr
+		nthdrsz + cstring>sstring type cr
 	then ; 
 	
 
@@ -212,6 +236,12 @@ nts 0 + constant ntshdr
 
 : last-note? ( idx -- f )
 	nullptr = ;
+
+\ read notes:
+\ 1. get idx of first note
+\ 2. display note with index 
+\ 3. get note's "next note" index
+\ 4. last note? yes? end. no? go to step 2.
 
 : read-nts ( -- ) \ displays stored notes from first to last.
 	get-ntsfirst ( n )
@@ -224,7 +254,8 @@ nts 0 + constant ntshdr
 	else
 		begin
 			dup ( n n )
-			dup cr ." Note: " . ( n n )
+
+			
 			read-nt ( n )
 			get-ntnext ( idx-of-next-nt )
 			dup ( idx-of-next-note idx-of-next-nt )
@@ -233,16 +264,6 @@ nts 0 + constant ntshdr
 		drop
 	then ;
 
-\ delete note: delete by number, text, or regexp, with prompt 1. find
-\ idx of note to delete 2. compare with first note is it first?
-\ 3. yes: change first note field in nts to first note's "next" field
-\ no: proceed 4. change the "next" pointer of the previous note (how
-\ to determine which is the "previous" note?) to point to the deleted
-\ note's "next" pointer. If there is going to be a "previous" pointer,
-\ adjust those too.  4a. Could determine the "previous" node by
-\ cycling throungh all the notes until the note's "next" pointer
-\ points to the note to be deleted, to avoid the complications of a
-\ doubly-linked list.
 
 : first-nt? ( idx -- f )
 	get-ntsfirst = ;
@@ -295,7 +316,19 @@ nts 0 + constant ntshdr
 	-1 update-ntstotal	\ decrement the total number of notes
 ;	
 
-\ This needs to be tested Saturday, November 25, 2023 15:30
+
+\ delete note: delete by number, text, or regexp, with prompt
+\ 1. find idx of note to delete
+\ 2.compare with first note is it first?
+\ 3. yes: change first note field in nts to first note's "next" field
+\ no: proceed
+\ 4. change the "next" pointer of the previous note 
+\ to point to the deleted note's "next" pointer. 
+\ 4a. Could determine the "previous" node by
+\ cycling throungh all the notes until the note's "next" pointer
+\ points to the note to be deleted, to avoid the complications of a
+\ doubly-linked list.
+
 : del-nt ( n -- ) \ first, delete the note by index ("idx")
 	\ in this word, "n" is the nt to be deleted
 	\ are we deleting the first note?

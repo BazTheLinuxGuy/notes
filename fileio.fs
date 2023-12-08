@@ -15,7 +15,7 @@ create notes-filename notes-filename-size chars allot
 notes-filename notes-filename-size chars erase
 s" NOTES" notes-filename swap cmove
 cr ." Notes filename: "
-notes-filename cstring>sstring type cr
+notes-filename cstring>sstring type
 
 16 constant q-filename-size
 create q-filename q-filename-size chars allot

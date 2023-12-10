@@ -234,7 +234,6 @@ init-nts
 
 \ needs to be tested again
 : read-nt ( n -- f )
-	dup                  ( n n )
 	get-nt-addr-from-idx ( n nt-addr )
 	dup ntidx + c@       ( n nt-addr idx-field-of-nt )
 	dup
@@ -247,15 +246,17 @@ init-nts
 		if
 			cr ." That note hasn't been written yet." cr
 			2drop false
-		else \ otherwise, display the note
-			swap            ( nt-addr n )
+		else ( nt-addr n ) \ otherwise, display the note
 			dup cr ." Note: " . space ( nt-addr n )
 			display-timestamp-by-idx cr
 			nthdrsz + cstring>sstring type cr
 			true
 		then
 	then ; 
-	
+
+: rn ( n -- )
+	read-nt drop ;
+
 : get-ntnext ( idx -- ntnext-of-idx )
 	get-nt-addr-from-idx  ( nt-addr-of-idx )
 	ntnext + c@           ( ntnext-of-nt )

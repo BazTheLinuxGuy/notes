@@ -23,14 +23,13 @@ case
 
 : 0fill ( n width )
 	2dup how-many-zeros 0 u+do 0 1 .r loop drop dup testlen .r ;
-
-: dispdt -rot dup testlen .r 47 emit dup testlen .r 47 emit dup testlen .r ;
-
-\ : dispdt -rot dup testlen .r 47 emit dup testlen .r 47 emit  . ;
-
+decimal
+: dispdt ( DD MM YY -- )
+	-rot dup testlen .r 47 emit dup testlen .r 47 emit
+	2000 + dup testlen .r ;
 
 0 value AMPM \ 0 = "AM", 1 = "PM"
-
+decimal
 : disptm ( min hr -- ) \ convert 24-hour time to 12-hour + AM/PM
 	case
 		dup 13 >= ?of 1 to AMPM 12 - endof

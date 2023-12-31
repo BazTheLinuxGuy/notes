@@ -16,7 +16,7 @@ require numconv.fs
 require fileio.fs
 
 
-10 constant NEWLINE
+
 1 constant debugging
 
 [IFDEF] debugging
@@ -37,8 +37,13 @@ decimal
 
 killstack
 
+&10 constant NEWLINE \ 0x0A 
+$100 constant tbsz   \ hex 100, decimal 256 "text buffer size"
+&76 constant linesz  \ decimal 76 - size of input line
+
+align
 struct
-	char% field ntidx
+	cell% field size
 	char% field year
 	char% field month
 	char% field day
@@ -46,6 +51,7 @@ struct
 	char% field minute
 	char% field rsv1
 	char% field rsv2
+	char% field rsv3
 	\	n% field nt
 	char% field note char% $100 *	
 	cell% field list-next
@@ -63,19 +69,13 @@ create notes notes% allot drop
 notes notes% %size erase
 
 variable saveref
-\ variable head
 
 : new-node ( -- addr )
 	note-node% %allot \ dup saveref !
 	dup note-node% %size chars erase
 ;
 
-
-$100 constant tbsz \ hex 100, decimal 256
-&76 constant linesz \ decimal 76
-\ $FE constant NULL \ hex FE, decimal 254
-
-variable psize 0 ,  \ paragraph size
+\ variable psize 0 ,  \ paragraph size
 
 : timestamp-node ( a -- )
 	>r
@@ -88,7 +88,7 @@ variable psize 0 ,  \ paragraph size
 	r> minute c! ( sec )
 	drop    \ no room to store seconds
 ;
-decimal
+
 : display-timestamp ( a -- )
 	dup >r
 	minute c@
@@ -98,30 +98,69 @@ decimal
 	r> year c@
 	dispdt space disptm ;
 
-: pedit ( a n -- ) \ address of buffer, size of one line.
-	>r \ save line size
-	0 psize !	
+: show-prompt ( -- )
 	cr ." Enter note. Enter '.' on  a new line to finish."
-	cr
-	begin    \ a (a = address of buffer)
-		r@   \ a n (n = line size)
-		2dup \ a n a n 
-		cr ." > "
-		accept \ a n "actual size"
-		dup psize +! \ keep track of actual size...use this later
-		\ a n "actual size"
-		nip \ a size
-		2dup   \ a size a size
-		s" ." compare  \ a size f
-		0<>
-	while
-			+ dup \ a+size	a+size
-			0 swap c! \ a+size
-			1+       \ a+size+1...next slot
-\			r@
-	repeat
-	drop NEWLINE swap c! \ end of input=NEWLINE (decimal 10)
-	r> drop
+	cr ;
+
+: init-size-to-zero ( node -- )
+	size 0 swap !
+;	
+
+: get-line-input ( a -- size )
+		linesz \ a line-size 
+		cr ." > "  
+		accept      \ a "actual size"
+;
+
+: terminate-with-zero ( address size -- newaddress )
+	+ dup          \ a+size a+size
+	0 swap c!      \ store the string-terminating 0
+	1+             \ a+size+1 \ update the address
+;
+
+: add-newline ( address size -- newaddress )
+	dup	NEWLINE swap c!	1+
+;
+
+: increment-size ( node -- ) \ increment size field by 1
+	size 1 swap +!
+;	
+
+
+\ pedit problem: Saturday, December 30, 2023 12:10
+\ for some reason, the '.' is getting stored with the
+\ rest of the input:
+\ 7FC696D28C18: 54 68 69 73  20 69 73 20 - 6C 69 6E 65  20 31 20 6F  This is line 1 o
+\ 7FC696D28C28: 66 20 6E 6F  74 65 20 6F - 6E 65 2C 00  61 6E 64 20  f note one,.and 
+\ 7FC696D28C38: 74 68 69 73  20 69 73 20 - 74 68 65 20  73 65 63 6F  this is the seco
+\ 7FC696D28C48: 6E 64 20 6C  69 6E 65 21 - 00 2E 0A 00  00 00 00 00  nd line!........
+\ as can be seen, the '.' ($2E) is in there, without a terminating 0,
+\ right before the newline.
+
+: pedit ( node-address  -- )
+	\ IN: address of buffer \ , size of one line.
+	\ OUT: number of bytes in buffer
+	\ init size to 0
+	dup init-size-to-zero
+	\ get the note address within node
+	show-prompt
+	dup note \ node note-within-node	
+	begin          \ node note+currentsize
+		dup get-line-input   \ node a "actual-size-of-input"
+		2dup s" ." compare 0<> if \ node a actsize 
+			\ update size field for this note		
+			dup 3 pick size +! \ node a actsize
+			terminate-with-zero
+			over increment-size
+		else
+			drop \ because this is the '.', size 1
+			add-newline
+			over increment-size
+			2drop
+			exit
+		then
+	again
+	\ return to caller with empty stack
 ;
 
 : pshow ( a -- ) \ a is address of paragraph to show
@@ -162,11 +201,9 @@ decimal
 : makenote ( -- )
 	\ creates a new node and asks the user for note entry,
 	\ then stores it in the linked list
-	new-node
-	dup note linesz pedit
+	new-node dup pedit   \ just send pedit the node address
 	\ add date/timestamp here
 	dup timestamp-node
-
 	cr ." On: "
 	dup display-timestamp
 	cr ." You entered: "
@@ -186,12 +223,8 @@ decimal
 	then
 	\ store current node as "last" in notes struct
 	dup store-last
-	drop
-	\ in case we need to add another instruction
-	\ after "store-last"
+	drop \ I guess we don't need the new node's address anymore.
 ;
-
-\ hex
 
 \ This next one needs work:
 : display-list-data
@@ -207,20 +240,40 @@ decimal
 	else
 		cr ." No notes." cr
 	then
-;		
+;
 
-\ : write-list ( -- )
-\	s" newnotes.txt" open-output
-\	head @
-\	begin
-\		dup list-next @ 0<> 
-\	while
+: my-u. ( u -- )
+  \ Simplest use of pns.. behaves like Standard u. 
+  0              \ convert to unsigned double
+  <<#            \ start conversion
+  #s             \ convert all digits
+	#>             \ complete conversion
+\ type space     \ display, with trailing space
+  #>> ;          \ release hold area
+
+
+: nconv ( n -- addr u )
+	0 <# #s #> ;
+
+\ Working here:
+: write-list ( -- )
+	notes head @
+	s" newnotes.txt" open-output
+	begin
+		
+		
+		
+		dup 0=
+	until
+			\ need to convert datestamp to ascii
+			\ and we need the size of the note in the size field
 \			dup data @ dup 
 \			fd-out write-line throw
 \	repeat
 \	drop
-\	close-output ;
+	\	close-output
+;
 
-
+\ cr ." After end of source file " cr .s key emit cr
 
 

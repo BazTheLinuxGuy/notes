@@ -15,7 +15,7 @@ case
 	dup 1000 >= ?of drop 4 endof 
 	dup 100 >= ?of drop 3 endof
 	dup 10 >= ?of drop 2 endof
-	dup 1 >= ?of drop 1 endof
+	dup 0 >= ?of drop 1 endof
 0 endcase	;
 		
 : how-many-zeros ( n width -- number-of-zeros )
@@ -23,17 +23,21 @@ case
 
 : 0fill ( n width )
 	2dup how-many-zeros 0 u+do 0 1 .r loop drop dup testlen .r ;
-decimal
+
 : dispdt ( DD MM YY -- )
-	-rot dup testlen .r 47 emit dup testlen .r 47 emit
-	2000 + dup testlen .r ;
+	-rot  \ YY DD MM
+	dup testlen .r [char] / emit  \ print the month + /
+	dup testlen .r [char] / emit  \ print the day + /
+	&2000 +                        \ add 2000, the year is stored as a byte
+	\ stored as the year minus 2000, e.g. 24.
+	dup testlen .r ;              \ print the 4-digit year
 
 0 value AMPM \ 0 = "AM", 1 = "PM"
-decimal
+
 : disptm ( min hr -- ) \ convert 24-hour time to 12-hour + AM/PM
 	case
-		dup 13 >= ?of 1 to AMPM 12 - endof
-	    dup 12 = ?of 1 to AMPM endof
+		dup &13 >= ?of 1 to AMPM 12 - endof
+	    dup &12 = ?of 1 to AMPM endof
 	    dup 0= ?of 0 to AMPM 12 + endof
         dup 1 >= ?of 0 to AMPM endof
 	0 endcase

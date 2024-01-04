@@ -15,8 +15,6 @@ decimal
 require numconv.fs
 require fileio.fs
 
-
-
 1 constant debugging
 
 [IFDEF] debugging
@@ -40,6 +38,13 @@ killstack
 &10 constant NEWLINE \ 0x0A 
 $100 constant tbsz   \ hex 100, decimal 256 "text buffer size"
 &76 constant linesz  \ decimal 76 - size of input line
+
+64 constant notes-filename-size
+create notes-filename notes-filename-size chars allot
+notes-filename notes-filename-size chars erase
+s" notes.bin" notes-filename swap cmove
+\ cr ." Notes filename: "
+\ notes-filename cstring>sstring type cr
 
 align
 struct
@@ -68,14 +73,10 @@ killstack
 create notes notes% allot drop
 notes notes% %size erase
 
-variable saveref
-
 : new-node ( -- addr )
-	note-node% %allot \ dup saveref !
+	note-node% %allot
 	dup note-node% %size chars erase
 ;
-
-\ variable psize 0 ,  \ paragraph size
 
 : timestamp-node ( a -- )
 	>r
@@ -198,6 +199,11 @@ variable saveref
 	!
 ;	
 
+: increment-numnotes ( -- )
+	notes numnotes 1 swap +!
+;	
+
+
 : makenote ( -- )
 	\ creates a new node and asks the user for note entry,
 	\ then stores it in the linked list
@@ -224,6 +230,7 @@ variable saveref
 	\ store current node as "last" in notes struct
 	dup store-last
 	drop \ I guess we don't need the new node's address anymore.
+	increment-numnotes
 ;
 
 \ This next one needs work:
@@ -231,49 +238,171 @@ variable saveref
 	notes head @
 	dup 0<>
 	if
+		cr
 		begin
 			dup note pshow
+			cr
 			list-next @
 			dup 0=
 		until
+		cr
 		drop
 	else
 		cr ." No notes." cr
 	then
 ;
 
-: my-u. ( u -- )
-  \ Simplest use of pns.. behaves like Standard u. 
-  0              \ convert to unsigned double
-  <<#            \ start conversion
-  #s             \ convert all digits
-	#>             \ complete conversion
-\ type space     \ display, with trailing space
-  #>> ;          \ release hold area
+\ : nconv ( n -- addr u )
+\	0 <# #s #> ;
 
+\ : write-num ( num -- )
+\	nconv fd-out write-line throw ;
+	
+: write-size ( node -- )
+	size cell fd-out write-file throw
+;	
 
-: nconv ( n -- addr u )
-	0 <# #s #> ;
-
-\ Working here:
-: write-list ( -- )
-	notes head @
-	s" newnotes.txt" open-output
-	begin
-		
-		
-		
-		dup 0=
-	until
-			\ need to convert datestamp to ascii
-			\ and we need the size of the note in the size field
-\			dup data @ dup 
-\			fd-out write-line throw
-\	repeat
-\	drop
-	\	close-output
+\ FIXED: Monday, January  1, 2024 15:30
+: write-timestamp ( node -- ) \ uses global "fd-out"
+	year 8 chars fd-out write-file throw
 ;
 
+: write-note-data ( node -- )
+	dup size @
+	swap note  swap
+\	cr ." Writing...." cr  \ ...?
+\	2dup cr type           \ ...?
+	fd-out write-file throw
+;
+
+: create-and-open-notes-file-for-writing ( -- )
+	notes-filename cstring>sstring      \ get the name of the notes file
+	w/o bin create-file throw to fd-out \ open in binary mode
+;
+
+\ This is expected to be the last word called in the program.
+: write-list ( -- )  \ serializes the notes struct to file
+	notes head @
+	dup 0<> if
+		create-and-open-notes-file-for-writing
+		begin
+			\ write out the size
+			dup write-size
+			\ write the timestamp
+			dup write-timestamp
+			\ write the note text
+			dup write-note-data
+			list-next @
+			dup 0=
+		until
+		drop
+		close-output
+	else
+		cr ." No notes." cr
+	then
+;
+
+: open-notes-file-for-reading ( -- )
+	notes-filename cstring>sstring     \ get name of notes file
+	r/o bin open-file throw to fd-in   \ open it in binary mode
+;
+
+\ : read-size ( node -- f ) \ returns
+\	size cell fd-in read-file throw
+\	cell <> if
+\		cr ." some problem occurred; see programmer." cr
+\	then
+\ ;
+
+: read-size ( node -- )
+	size cell fd-in read-file throw
+	cell <> if
+		cr ." some problem occurred; see programmer." cr
+	then
+;
+
+
+: read-timestamp ( node -- )
+	year 8 chars fd-in read-file throw
+	8 <> if
+		cr ." some problem occurred; see programmer." cr
+	then
+;
+
+: read-note ( node -- )
+	dup size @
+	swap note swap
+	fd-in read-file throw
+	over size @ <> if
+		cr ." some problem occurred; see programmer." cr
+	then
+;	
+
+: link-node-into-list ( node -- )
+		\ is this the first node? If so, store as "head"
+		first-node? if
+			dup store-head
+		else
+			\ otherwise, update the previous node's
+			\ "list-next" pointer
+			dup update-previous-nodes-list-next-pointer
+		then
+		\ store current node as "last" in notes struct
+		dup store-last
+		drop \ I guess we don't need the new node's address anymore.
+		increment-numnotes
+;	
+
+
+
+variable nsize 0 ,
+\ *** WORKING HERE! *** Wednesday, January  3, 2024 3:00 PM
+\ This is expected to be the first word called in the program.
+: read-list ( -- )  \ deserializes the notes file to the notes struct
+	\ Don't call this word unless you are ready to zero out
+	\ the notes struct!
+	open-notes-file-for-reading
+	notes notes% %size erase \ is this really necessary?
+	begin
+		\ we will haveto change this (see notes below)
+		\ to read the size from the file into some sort of
+		\ variable. If the read returns zero bytes read, we are
+		\ at end of file. Otherwise, create a new node and put the
+		\ size from the size variable into the new node.
+		\ There doesn't seem to be any way to "free" the allotted
+		\ node if it isn't needed. So create the new node only
+		\ AFTER successfully reading a size from the file, instead
+		\ of reading zero bytes "successfully".
+		nsize cell fd-in read-file throw
+		\ test the size
+		0 <> if
+			\ we haven't reached end of file
+			new-node
+			\ dup read-size
+			dup size nsize @ swap ! 
+			dup read-timestamp
+			dup read-note
+			dup link-node-into-list
+			drop  \ finally drop the node's address, now stored in list.
+		then
+		\	drop \ drop the duped "size"
+		fd-in file-eof?
+		\ file-eof? doesn't work...
+		\ we're going to have to try to read from the file. The end-of-file
+		\ indicator is that read-file returns a 0 "wior", so nothing
+		\ gets thrown, but (more importantly) there is a length of zero
+		\ returned. That is truly how to read end-of-file.
+		\ Ironically, after you "successfully" read zero bytes,
+		\ THEN file-eof? returns true.
+	until
+	close-input
+;
+
+
 \ cr ." After end of source file " cr .s key emit cr
+
+
+
+
 
 
